@@ -6,7 +6,7 @@
 
 #define libundirect_EXPORT __attribute__((visibility ("default")))
 
-NSString* _libundirect_getSelectorString(BOOL classMethod, NSString* className, SEL selector)
+NSString* _m_libundirect_getSelectorString(BOOL classMethod, NSString* className, SEL selector)
 {
     NSString* prefix;
 
@@ -22,41 +22,9 @@ NSString* _libundirect_getSelectorString(BOOL classMethod, NSString* className, 
     return [NSString stringWithFormat:@"%@[%@ %@]", prefix, className, NSStringFromSelector(selector)];
 }
 
-//only on ios
-
-#import "substrate.h"
-
-NSMutableDictionary* undirectedSelectorsAndValues;
 NSMutableArray* failedSelectors;
 
-libundirect_EXPORT void libundirect_MSHookMessageEx(Class _class, SEL message, IMP hook, IMP *old)
-{
-    if(undirectedSelectorsAndValues)
-    {
-        if(message)
-        {
-            NSString* selectorString = _libundirect_getSelectorString(class_isMetaClass(_class), NSStringFromClass(_class), message);
-
-            NSValue* symbol = [undirectedSelectorsAndValues objectForKey:selectorString];
-            if(symbol)
-            {
-                NSLog(@"[libundirect_MSHookMessageEx] received hook for %@ which is a direct method, redirecting to MSHookFunction...", selectorString);
-                void* symbolPtr = [symbol pointerValue];
-                MSHookFunction(symbolPtr, (void*)hook, (void**)old);
-
-                return;
-            }
-        }
-    }
-
-    MSHookMessageEx(_class, message, hook, old);
-}
-
-//only on ios end
-
-#ifdef __LP64__
-
-void _libundirect_addToFailedSelectors(NSString* selectorString)
+void _m_libundirect_addToFailedSelectors(NSString* selectorString)
 {
     static dispatch_once_t onceToken;
     dispatch_once (&onceToken, ^{
@@ -66,16 +34,11 @@ void _libundirect_addToFailedSelectors(NSString* selectorString)
     [failedSelectors addObject:selectorString];
 }
 
-libundirect_EXPORT void libundirect_rebind(BOOL classMethod, void* directPtr, NSString* className, SEL selector, const char* format)
+libundirect_EXPORT void m_libundirect_rebind(BOOL classMethod, void* directPtr, NSString* className, SEL selector, const char* format)
 {
-    NSString* selectorString = _libundirect_getSelectorString(classMethod, className, selector);
+    NSString* selectorString = _m_libundirect_getSelectorString(classMethod, className, selector);
 
-    NSLog(@"[libundirect_rebind] about to apply %@ with %s to %p", selectorString, format, directPtr);
-
-    static dispatch_once_t onceToken;
-    dispatch_once (&onceToken, ^{
-        undirectedSelectorsAndValues = [NSMutableDictionary new];
-    });
+    NSLog(@"[m_libundirect_rebind] about to apply %@ with %s to %p", selectorString, format, directPtr);
 
     // check whether the direct pointer is actually a valid function pointer
     Dl_info info;
@@ -83,8 +46,8 @@ libundirect_EXPORT void libundirect_rebind(BOOL classMethod, void* directPtr, NS
 
     if(rc == 0)
     {
-        NSLog(@"[libundirect_rebind] failed, not a valid function pointer");
-        _libundirect_addToFailedSelectors(selectorString);
+        NSLog(@"[m_libundirect_rebind] failed, not a valid function pointer");
+        _m_libundirect_addToFailedSelectors(selectorString);
         return;
     }
 
@@ -92,8 +55,8 @@ libundirect_EXPORT void libundirect_rebind(BOOL classMethod, void* directPtr, NS
 
     if(!classToUse)
     {
-        NSLog(@"[libundirect_rebind] failed, class %@ not found", className);
-        _libundirect_addToFailedSelectors(selectorString);
+        NSLog(@"[m_libundirect_rebind] failed, class %@ not found", className);
+        _m_libundirect_addToFailedSelectors(selectorString);
         return;
     }
 
@@ -103,7 +66,7 @@ libundirect_EXPORT void libundirect_rebind(BOOL classMethod, void* directPtr, NS
         classToUse = object_getClass(classToUse);
         if([classToUse respondsToSelector:selector])
         {
-            NSLog(@"[libundirect_rebind] failed, method already exists, likely already undirected");
+            NSLog(@"[m_libundirect_rebind] failed, method already exists, likely already undirected");
             return;
         }
     }
@@ -111,7 +74,7 @@ libundirect_EXPORT void libundirect_rebind(BOOL classMethod, void* directPtr, NS
     {
         if([classToUse instancesRespondToSelector:selector])
         {
-            NSLog(@"[libundirect_rebind] failed, method already exists, likely already undirected");
+            NSLog(@"[m_libundirect_rebind] failed, method already exists, likely already undirected");
             return;
         }
     }
@@ -123,13 +86,10 @@ libundirect_EXPORT void libundirect_rebind(BOOL classMethod, void* directPtr, NS
         format
     );
 
-    NSValue* ptrValue = [NSValue valueWithPointer:directPtr];
-    [undirectedSelectorsAndValues setObject:ptrValue forKey:selectorString];
-
-    NSLog(@"[libundirect_rebind] %@ applied", selectorString);
+    NSLog(@"[m_libundirect_rebind] %@ applied", selectorString);
 }
 
-void* _libundirect_find_in_region(vm_address_t startAddr, vm_offset_t regionLength, unsigned char* bytesToSearch, size_t byteCount)
+void* _m_libundirect_find_in_region(vm_address_t startAddr, vm_offset_t regionLength, unsigned char* bytesToSearch, size_t byteCount)
 {
     if(byteCount < 1)
     {
@@ -147,7 +107,7 @@ void* _libundirect_find_in_region(vm_address_t startAddr, vm_offset_t regionLeng
 
         if(foundPtr == NULL)
         {
-            NSLog(@"[_libundirect_find_in_region] foundPtr == NULL return");
+            NSLog(@"[_m_libundirect_find_in_region] foundPtr == NULL return");
             break;
         }
 
@@ -161,7 +121,7 @@ void* _libundirect_find_in_region(vm_address_t startAddr, vm_offset_t regionLeng
 
             if(memcmpRes == 0)
             {
-                NSLog(@"[_libundirect_find_in_region] foundPtr = %p", foundPtr);
+                NSLog(@"[_m_libundirect_find_in_region] foundPtr = %p", foundPtr);
                 return foundPtr;
             }
         }
@@ -176,7 +136,7 @@ void* _libundirect_find_in_region(vm_address_t startAddr, vm_offset_t regionLeng
     return NULL;
 }
 
-void* _libundirect_seek_back(vm_address_t startAddr, unsigned char toByte, unsigned int maxSearch)
+void* _m_libundirect_seek_back(vm_address_t startAddr, unsigned char toByte, unsigned int maxSearch)
 {
     vm_address_t curAddr = startAddr;
 
@@ -196,7 +156,7 @@ void* _libundirect_seek_back(vm_address_t startAddr, unsigned char toByte, unsig
     return NULL;
 }
 
-libundirect_EXPORT void* libundirect_find(NSString* imageName, unsigned char* bytesToSearch, size_t byteCount, unsigned char startByte)
+libundirect_EXPORT void* m_libundirect_find(NSString* imageName, unsigned char* bytesToSearch, size_t byteCount, unsigned char startByte)
 {
     intptr_t baseAddr;
     struct mach_header_64* header;
@@ -227,13 +187,13 @@ libundirect_EXPORT void* libundirect_find(NSString* imageName, unsigned char* by
 			continue;
 		}
 
-		void* result = _libundirect_find_in_region(cmd->vmaddr + baseAddr, cmd->vmsize, bytesToSearch, byteCount);
+		void* result = _m_libundirect_find_in_region(cmd->vmaddr + baseAddr, cmd->vmsize, bytesToSearch, byteCount);
 
         if(result != NULL)
         {
             if(startByte)
             {
-                void* backResult = _libundirect_seek_back((vm_address_t)result, startByte, 64);
+                void* backResult = _m_libundirect_seek_back((vm_address_t)result, startByte, 64);
                 if(backResult)
                 {
                     return backResult;
@@ -253,28 +213,7 @@ libundirect_EXPORT void* libundirect_find(NSString* imageName, unsigned char* by
     return NULL;
 }
 
-libundirect_EXPORT NSArray* libundirect_failedSelectors()
+libundirect_EXPORT NSArray* m_libundirect_failedSelectors()
 {
     return [failedSelectors copy];
 }
-
-#else
-
-// Non 64 bit devices are so ancient that they probably don't need to use this library
-
-libundirect_EXPORT void libundirect_rebind(BOOL classMethod, void* directPtr, NSString* className, SEL selector, const char* format)
-{
-
-}
-
-libundirect_EXPORT void* libundirect_find(NSString* imageName, unsigned char* bytesToSearch, size_t byteCount, unsigned char startByte)
-{
-    return NULL;
-}
-
-libundirect_EXPORT NSArray* libundirect_failedSelectors()
-{
-    return nil;
-}
-
-#endif
